@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 import resend
@@ -7,6 +8,7 @@ from app.config import get_settings
 from app.models import NotificationLog, User
 
 settings = get_settings()
+logger = logging.getLogger("playlist_saver.notifications")
 
 
 class NotificationService:
@@ -14,18 +16,49 @@ class NotificationService:
         subject = f"Tracks removed from {playlist_name}"
         body = "Removed tracks:\n" + "\n".join(f"- {name}" for name in tracks)
         delivery_status = "skipped"
+        provider_message_id: str | None = None
 
         if settings.resend_api_key and settings.email_provider == "resend":
-            resend.api_key = settings.resend_api_key
-            resend.Emails.send(
-                {
-                    "from": settings.email_from,
-                    "to": [user.email],
-                    "subject": subject,
-                    "text": body,
-                }
+            try:
+                resend.api_key = settings.resend_api_key
+                result = resend.Emails.send(
+                    {
+                        "from": settings.email_from,
+                        "to": [user.email],
+                        "subject": subject,
+                        "text": body,
+                    }
+                )
+                provider_message_id = result.get("id") if isinstance(result, dict) else None
+                delivery_status = "sent"
+                logger.info(
+                    "Email sent successfully",
+                    extra={
+                        "user_id": str(user.id),
+                        "recipient": user.email,
+                        "subject": subject,
+                        "provider": "resend",
+                        "provider_message_id": provider_message_id,
+                        "track_count": len(tracks),
+                    },
+                )
+            except Exception:
+                delivery_status = "failed"
+                logger.exception(
+                    "Email delivery failed",
+                    extra={
+                        "user_id": str(user.id),
+                        "recipient": user.email,
+                        "subject": subject,
+                        "provider": "resend",
+                        "track_count": len(tracks),
+                    },
+                )
+        else:
+            logger.info(
+                "Email skipped — provider not configured",
+                extra={"user_id": str(user.id), "recipient": user.email},
             )
-            delivery_status = "sent"
 
         db.add(
             NotificationLog(

@@ -1,4 +1,5 @@
 import secrets
+import uuid
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
@@ -14,7 +15,7 @@ from app.schemas.common import UserOut
 from app.services.spotify_service import SpotifyService
 from app.services.youtube_service import YouTubeService
 from app.utils.encryption import encrypt_value
-from app.utils.jwt import create_access_token
+from app.utils.jwt import create_access_token, create_refresh_token, decode_refresh_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
@@ -24,6 +25,22 @@ youtube_service = YouTubeService()
 
 def _cookie_secure() -> bool:
     return settings.environment == "production"
+
+
+def _set_auth_cookies(response: Response, user_id: uuid.UUID) -> None:
+    access = create_access_token({"sub": str(user_id)})
+    refresh = create_refresh_token({"sub": str(user_id)})
+    response.set_cookie(
+        "access_token", access,
+        httponly=True, secure=_cookie_secure(), samesite="lax",
+        max_age=settings.jwt_access_expiration_minutes * 60,
+    )
+    response.set_cookie(
+        "refresh_token", refresh,
+        httponly=True, secure=_cookie_secure(), samesite="lax",
+        path="/api/auth/refresh",
+        max_age=settings.jwt_refresh_expiration_days * 86400,
+    )
 
 
 @router.get("/spotify/login")
@@ -78,9 +95,8 @@ async def spotify_callback(
     await db.commit()
     await db.refresh(user)
 
-    jwt_token = create_access_token({"sub": str(user.id)})
     response = RedirectResponse(url=f"{settings.app_url}/dashboard")
-    response.set_cookie("access_token", jwt_token, httponly=True, secure=_cookie_secure(), samesite="lax")
+    _set_auth_cookies(response, user.id)
     response.delete_cookie("spotify_oauth_state")
     return response
 
@@ -138,10 +154,38 @@ async def google_callback(
     await db.commit()
     await db.refresh(user)
 
-    jwt_token = create_access_token({"sub": str(user.id)})
     response = RedirectResponse(url=f"{settings.app_url}/dashboard")
-    response.set_cookie("access_token", jwt_token, httponly=True, secure=_cookie_secure(), samesite="lax")
+    _set_auth_cookies(response, user.id)
     response.delete_cookie("google_oauth_state")
+    return response
+
+
+@router.post("/refresh")
+async def refresh(
+    refresh_token: str | None = Cookie(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    if not refresh_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
+
+    payload = decode_refresh_token(refresh_token)
+    if not payload or "sub" not in payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from None
+
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    response = Response()
+    _set_auth_cookies(response, user.id)
+    response.status_code = status.HTTP_200_OK
+    response.headers["content-type"] = "application/json"
+    response.body = b'{"status":"refreshed"}'
     return response
 
 
@@ -149,6 +193,7 @@ async def google_callback(
 async def logout() -> Response:
     response = Response()
     response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token", path="/api/auth/refresh")
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 

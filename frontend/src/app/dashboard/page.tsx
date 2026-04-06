@@ -98,9 +98,7 @@ export default function DashboardPage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-slate-600">
-            {user?.email} - Tier: <span className="font-semibold uppercase">{user?.subscription_tier}</span>
-          </p>
+          <p className="text-slate-600">{user?.email}</p>
         </div>
         <LogoutButton />
       </div>
@@ -146,7 +144,7 @@ export default function DashboardPage() {
                 checked={form.is_public_monitor}
                 onChange={(e) => setForm((f) => ({ ...f, is_public_monitor: e.target.checked }))}
               />
-              Public URL monitor (paid only)
+              Monitor via public URL
             </label>
             <button className="rounded bg-slate-900 px-4 py-2 text-white hover:bg-slate-800" type="submit">
               Save playlist

@@ -1,12 +1,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.database.session import get_db
-from app.models import Playlist, SubscriptionTier, TrackRemovalEvent, User
+from app.models import Playlist, TrackRemovalEvent, User
 from app.schemas.common import PlaylistCreate, PlaylistOut, TrackRemovalEventOut
 from app.services.playlist_manager import PlaylistManager
 
@@ -24,12 +24,6 @@ async def list_playlists(current_user: User = Depends(get_current_user), db: Asy
 async def create_playlist(
     payload: PlaylistCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    count = await db.scalar(select(func.count(Playlist.id)).where(Playlist.user_id == current_user.id))
-    if current_user.subscription_tier == SubscriptionTier.FREE and (count or 0) >= 1:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Free tier allows only 1 playlist")
-    if payload.is_public_monitor and current_user.subscription_tier == SubscriptionTier.FREE:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Public URL monitoring is paid only")
-
     playlist = Playlist(user_id=current_user.id, **payload.model_dump())
     db.add(playlist)
     await db.commit()
@@ -59,8 +53,6 @@ async def delete_playlist(
 
 @router.post("/{playlist_id}/check")
 async def manual_check(playlist_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if current_user.subscription_tier != SubscriptionTier.PAID:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manual checks are paid only")
     playlist = await db.scalar(select(Playlist).where(Playlist.id == playlist_id, Playlist.user_id == current_user.id))
     if not playlist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")

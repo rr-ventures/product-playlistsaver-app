@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
-from app.models import PlaylistPlatform, SubscriptionTier
+from app.models import PlaylistPlatform
 
 
 class UserOut(BaseModel):
@@ -15,7 +15,6 @@ class UserOut(BaseModel):
     avatar_url: str | None
     spotify_id: str | None
     google_id: str | None
-    subscription_tier: SubscriptionTier
     created_at: datetime
 
 

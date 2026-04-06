@@ -4,10 +4,11 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.middleware import InMemoryRateLimiter
-from app.api.routes import auth, payments, playlists, platforms, users
+from app.api.middleware import CSRFMiddleware, InMemoryRateLimiter
+from app.api.routes import auth, playlists, platforms, users
 from app.config import get_settings
 from app.database.session import engine
 from app.models import Base
@@ -44,17 +45,39 @@ app.add_middleware(
     allow_origins=[settings.app_url, "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "x-csrf-token"],
 )
+app.add_middleware(CSRFMiddleware)
 app.add_middleware(InMemoryRateLimiter)
 
 app.include_router(auth.router)
 app.include_router(playlists.router)
 app.include_router(platforms.router)
 app.include_router(users.router)
-app.include_router(payments.router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict:
+    checks: dict = {"status": "ok"}
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["database"] = "connected"
+    except Exception as exc:
+        checks["database"] = f"error: {exc}"
+        checks["status"] = "degraded"
+
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, socket_connect_timeout=2)
+        await r.ping()
+        await r.aclose()
+        checks["redis"] = "connected"
+    except Exception as exc:
+        checks["redis"] = f"error: {exc}"
+        checks["status"] = "degraded"
+
+    checks["encryption_configured"] = not settings.encryption_key.startswith("replace-with")
+
+    return checks

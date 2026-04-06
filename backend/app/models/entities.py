@@ -9,19 +9,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class SubscriptionTier(str, enum.Enum):
-    FREE = "free"
-    PAID = "paid"
-
-
 class PlaylistPlatform(str, enum.Enum):
     SPOTIFY = "spotify"
     YOUTUBE = "youtube"
-
-
-class SubscriptionPlan(str, enum.Enum):
-    MONTHLY = "monthly"
-    ANNUAL = "annual"
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -38,21 +28,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     google_access_token: Mapped[str | None] = mapped_column(Text)
     google_refresh_token: Mapped[str | None] = mapped_column(Text)
 
-    subscription_tier: Mapped[SubscriptionTier] = mapped_column(Enum(SubscriptionTier), default=SubscriptionTier.FREE)
-    stripe_customer_id: Mapped[str | None] = mapped_column(String(255))
-
     playlists: Mapped[list["Playlist"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-
-
-class Subscription(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    __tablename__ = "subscriptions"
-
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    stripe_subscription_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    plan: Mapped[SubscriptionPlan] = mapped_column(Enum(SubscriptionPlan), nullable=False)
-    status: Mapped[str] = mapped_column(String(64), nullable=False)
-    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Playlist(Base, UUIDPrimaryKeyMixin, TimestampMixin):

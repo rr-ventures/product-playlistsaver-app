@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, HttpUrl
 
 from app.api.dependencies import get_current_user
-from app.models import SubscriptionTier, User
+from app.models import User
 from app.services.soundcloud_service import SoundCloudService
 from app.services.spotify_service import SpotifyService
 from app.services.youtube_service import YouTubeService
@@ -36,9 +36,6 @@ class ResolveUrlRequest(BaseModel):
 
 @router.post("/resolve-url")
 async def resolve_url(payload: ResolveUrlRequest, current_user: User = Depends(get_current_user)):
-    if current_user.subscription_tier != SubscriptionTier.PAID:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Public URL monitoring is paid only")
-
     url = str(payload.url)
     if "spotify.com/playlist/" in url:
         playlist_id = url.split("playlist/")[-1].split("?")[0]
